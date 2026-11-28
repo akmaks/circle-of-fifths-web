@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="ug-import" content="">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Квинты">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Квинтовый круг</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #111111; --dim: #6e6e73; --line: #111111; --dash: #9a9a9f;
+    --ring: #ffffff; --hi: #ffe8b3; --tonic: #ff9f0a; --chip: #f2f2f7;
+    --bar: #ffe8b3; --fit-bg: #ffe8b3; --fit-line: transparent; /* song bars and the pale pad hint */
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111111; --fg: #f2f2f2; --dim: #8a8a8e; --line: #d0d0d0; --dash: #5a5a5e;
+      --ring: #1c1c1e; --hi: #4a3712; --tonic: #ff9f0a; --chip: #2c2c2e;
+      --bar: #3a3a3c; --fit-bg: transparent; --fit-line: var(--tonic); } /* no brown in the songs: grey bars, an orange ring for the hint */
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 17px/1.3 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  body { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "views" "box" "info";
+    height: 100dvh; overflow: hidden;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+  #views { grid-area: views; padding: 8px 16px 0; display: grid; gap: 6px; justify-items: center; }
+  .seg { display: inline-grid; grid-auto-flow: column; background: var(--chip); border-radius: 10px; padding: 2px; }
+  .seg button { font: inherit; font-size: 14px; color: var(--fg); background: none; border: 0; border-radius: 8px;
+    padding: 6px 11px; cursor: pointer; }
+  #views .seg button { font-size: 14px; padding: 6px 10px; }
+  #views .seg { width: min(100%, 420px); grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  #views .seg button { font-size: 12px; padding: 6px 2px; white-space: nowrap; }
+  #views .seg button[hidden] { display: none; }
+  .seg button.on { background: var(--bg); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  #neckbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; width: 100%; max-width: 420px; }
+  #neckbar[hidden] { display: none; }
+  #neckbar button, #neckbar select { font: inherit; font-size: 14px; color: var(--fg); background: var(--chip); border: 0;
+    border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  #neckbar select { flex: 1 1 96px; min-width: 96px; -webkit-appearance: none; appearance: none; text-align: center; } /* the tuning name stays readable */
+
+  #box { grid-area: box; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; }
+  svg { width: 100%; height: 100%; max-width: 100%; max-height: 100%; aspect-ratio: 1; touch-action: none; cursor: grab; }
+  svg[hidden] { display: none; }
+  #neck { aspect-ratio: auto; touch-action: none; cursor: default; } /* none: we read swipes ourselves */
+  /* «Гитара» → «Аккорды»: fingering + tiles, no modes; «Лады» and «Бас»: modes + neck + the key's chord tiles */
+  body[data-view=guitar][data-gmode=chord] :is(#modes, #aboutBtn) { display: none; }
+  #neck .fret { stroke: var(--dash); stroke-width: 1.5; }
+  #neck .nut { stroke: var(--line); stroke-width: 6; }
+  #neck .string { stroke: var(--dim); }
+  #neck .inlay { fill: var(--chip); }
+  #neck .fretno, #neck .sname { font-size: 20px; fill: var(--dim); }
+  #neck .sname { font-weight: 700; fill: var(--fg); }
+  #neck .dot { cursor: pointer; }
+  #neck .dot text { font-size: 18px; font-weight: 700; pointer-events: none; }
+  #neck .dot circle { fill: var(--hi); stroke: var(--bg); stroke-width: 2; }
+  #neck .dot.home circle { fill: var(--tonic); }
+  #neck .dot.spice circle { stroke: var(--tonic); stroke-width: 4; }
+  #neck .dot.chord circle { fill: var(--fg); }
+  #neck .dot.chord text { fill: var(--bg); }
+  #neck .dot.home.chord circle { fill: var(--tonic); }
+  #neck .dot.home.chord text { fill: #000; }
+  #neck .dot.dim { opacity: .25; }
+  /* Metronome: big tempo, −/slider/+, tap, meter, beat dots, start/stop */
+  #metro { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+  #metro[hidden] { display: none; }
+  .bpmrow { display: flex; align-items: baseline; gap: 8px; }
+  #bpm { font-size: 84px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .bpmrow small { color: var(--dim); font-size: 16px; }
+  .slrow { display: flex; align-items: center; gap: 12px; width: 100%; max-width: 420px; }
+  .slrow input { flex: 1; min-width: 0; accent-color: var(--tonic); height: 32px; }
+  #metro button { font: inherit; color: var(--fg); background: var(--chip); border: 0; cursor: pointer; }
+  .slrow button { width: 52px; height: 52px; border-radius: 26px; font-size: 30px !important; }
+  #tap { padding: 12px 36px; border-radius: 14px; font-size: 18px; font-weight: 600; }
+  #tap:active { transform: scale(.95); }
+  #beats { display: flex; gap: 12px; min-height: 30px; align-items: center; }
+  .beat { width: 18px; height: 18px; border-radius: 9px; background: var(--chip); transition: background .05s; }
+  .beat.medium { width: 22px; height: 22px; border-radius: 11px; }
+  .beat.strong { width: 28px; height: 28px; border-radius: 14px; }
+  .beat.now { background: var(--tonic); }
+  #metro .seg button { background: none; padding: 8px 9px; font-size: 14px; }
+  #metro .seg button.on { background: var(--bg); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  #metroGo { width: min(100%, 320px); padding: 16px; border-radius: 16px; font-size: 22px !important; font-weight: 700; }
+  #metroGo.on { background: var(--tonic) !important; color: #000 !important; }
+  .seg button.ticking { position: relative; } /* a small dot in the corner: the tab keeps its size */
+  .seg button.ticking::after { content: ''; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 4px; background: var(--tonic); }
+  /* Tuner: instrument, tuning, strings, the big note, a ±50 cent meter, what is heard */
+  #tuner { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+  #tuner[hidden] { display: none; }
+  #tuner button, #tuner select { font: inherit; color: var(--fg); background: var(--chip); border: 0; cursor: pointer; }
+  #tuner .seg button { background: none; padding: 6px 18px; }
+  #tuner .seg button.on { background: var(--bg); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  #tunerTuning { border-radius: 10px; padding: 8px 14px; -webkit-appearance: none; appearance: none; text-align: center; }
+  #tunerStrings { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  #tunerStrings button { min-width: 42px; padding: 9px 8px; border-radius: 10px; font-weight: 700; }
+  #tunerStrings button.on { background: var(--fg); color: var(--bg); }
+  #tunerStrings button.now { outline: 3px solid var(--tonic); }
+  #tunerNote { font-size: 96px; font-weight: 800; line-height: 1; }
+  #tunerMeter { position: relative; width: min(100%, 360px); height: 34px; border-radius: 17px;
+    background: linear-gradient(90deg, var(--chip), var(--chip) 45%, var(--hi) 45%, var(--hi) 55%, var(--chip) 55%); }
+  #tunerMeter .tick { position: absolute; left: 50%; top: 4px; bottom: 4px; width: 2px; background: var(--dim); }
+  #tunerNeedle { position: absolute; left: 50%; top: 2px; width: 30px; height: 30px; margin-left: -15px; border-radius: 15px;
+    background: var(--fg); transition: left .1s; }
+  #tunerStatus { font-size: 20px; font-weight: 700; min-height: 1.3em; color: var(--dim); }
+  #tunerStatus.ok { color: #1f9d55; } #tunerStatus.low, #tunerStatus.high { color: var(--tonic); }
+  #tunerHeard { font-size: 14px; color: var(--dim); min-height: 1.2em; font-variant-numeric: tabular-nums; }
+  .trow { display: flex; gap: 8px; }
+  .trow button { padding: 12px 16px; border-radius: 14px; font-weight: 600; }
+  #tunerGo.on { background: var(--tonic); color: #000; }
+  #tunerRef:disabled { opacity: .35; }
+  #tunerMsg { font-size: 14px; color: var(--tonic); text-align: center; max-width: 320px; min-height: 1.2em; }
+  /* «Песни»: list → song (parts of bars + chord pad) → «Разбор» or the player */
+  #songs { width: 100%; height: 100%; max-width: 480px; display: flex; flex-direction: column; }
+  #songs[hidden], #info[hidden], .sub[hidden], #songs button[hidden] { display: none !important; } /* styled buttons keep [hidden] */
+  #records { width: 100%; height: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+  #records[hidden] { display: none !important; }
+  #recordStart, #plRecord { font: inherit; color: var(--fg); background: var(--chip); border: 0; border-radius: 10px; padding: 10px 14px; font-weight: 600; }
+  #recordStart { box-sizing: border-box; width: 108px; flex: 0 0 108px; padding-inline: 6px; white-space: nowrap; }
+  #player #plRecord { min-width: 40px; padding: 6px !important; }
+  #recordStart.on { color: #ff3b30; }
+  #player #plRecord { color: #ff3b30; background: rgba(255,59,48,.12); border-radius: 50%; }
+  #plRecord.on { background: #ff3b30 !important; color: #fff !important; animation: record-pulse .8s ease-in-out infinite; }
+  .recording-indicator { display: inline-flex; align-items: center; gap: 6px; color: #ff3b30; font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .recording-indicator::before { content: ''; width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: #ff3b30; animation: record-pulse 1s ease-in-out infinite; }
+  .recording-indicator[hidden] { display: none; }
+  @keyframes record-pulse { 50% { opacity: .25; transform: scale(.75); } }
+  @media (prefers-reduced-motion: reduce) { .recording-indicator::before, #plRecord.on { animation: none; } }
+  #recordStatus { color: var(--dim); font-size: 14px; }
+  #playerRecordStatus { color: var(--dim); font-size: 12px; }
+  #playerRecordStatus:empty { display: none; }
+  #recordsEmpty { color: var(--dim); text-align: center; }
+  #recordsEmpty[hidden] { display: none; }
+  #recordItems { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  #recordItems, #recordItems * { touch-action: pan-y; }
+  #recordItems li { position: relative; overflow: hidden; border-radius: 14px; }
+  #recordItems .record-card { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 14px; background: var(--chip); transition: transform .2s; }
+  #recordItems li.open .record-card { transform: translateX(-96px); }
+  #recordItems audio { width: 100%; height: 40px; }
+  #recordItems .record-export { align-self: flex-end; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 6px; color: var(--fg); background: var(--bg); border: 0; border-radius: 10px; }
+  #recordItems button:disabled { opacity: .6; }
+  #recordItems .del { position: absolute; top: 0; right: 0; bottom: 0; width: 96px; text-align: center; font-weight: 600; background: #ff3b30 !important; color: #fff !important; }
+  #recordItems li:not(.open) .del { visibility: hidden; }
+  .sub { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+  #finder button { font: inherit; color: var(--fg); cursor: pointer; }
+  :is(#songList, #songEdit, #player) :is(button, select), #anBack { font: inherit; color: var(--fg); cursor: pointer; border: 0; background: var(--chip); border-radius: 10px; }
+  #songList { overflow-y: auto; }
+  #songFolderBar { display: flex; align-items: center; gap: 8px; flex: none; }
+  #songFolderBack { min-width: 36px; padding: 6px !important; }
+  #songFolderTitle { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #songFolderCreate { padding: 7px 10px; }
+  #songItems { flex: 1; min-height: 0; overflow-y: auto; }
+  #songItems .folder-item { display: flex; align-items: center; gap: 10px; min-height: 48px; border-radius: 14px; padding: 10px 14px; }
+  #songItems .folder-item .folder-name { flex: 1; font-weight: 650; }
+  #songItems .folder-item .folder-mark { color: var(--dim); font-size: 19px; }
+  #songReadonly { display: none; color: var(--dim); font-size: 12px; align-self: center; white-space: nowrap; }
+  #songEdit.readonly #songReadonly { display: inline; }
+  #songEdit.readonly #songName { color: var(--dim) !important; }
+  #songEdit.readonly #songTranspose { display: none; }
+  #songTranspose { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; }
+  #songTranspose button { flex: 0 0 44px; width: 44px; height: 44px; min-width: 44px !important; padding: 0 !important; font-size: 16px; font-weight: 700; }
+  #songTransposeKey { flex: 0 0 28px; width: 28px; min-width: 0; text-align: center; color: var(--dim); font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #songItems { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #songItems button { width: 100%; text-align: left; padding: 10px 12px; }
+  #songItems li { position: relative; overflow: hidden; border-radius: 10px; }
+  #songItems, #songItems * { touch-action: pan-y; } /* the list scrolls up and down; sideways is our swipe */
+  #songItems .item { position: relative; z-index: 1; transition: transform .2s; }
+  #songItems li.open .item { transform: translateX(-96px); }
+  #songItems .del { position: absolute; top: 0; right: 0; bottom: 0; width: 96px; text-align: center; font-weight: 600;
+    background: #ff3b30 !important; color: #fff !important; }
+  #songItems li:not(.open) .del { visibility: hidden; } /* else its red shows at the rounded corners */
+  #songItems b { display: block; font-size: 17px; }
+  #songItems small { display: block; color: var(--dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wide { padding: 12px; font-weight: 600; }
+  .newrow > button { flex: 1; }
+  #songPaste { background: none !important; border: 1.5px dashed var(--dash) !important; color: var(--dim) !important; border-radius: 14px !important; }
+  #songAdd { background: none !important; border: 1.5px dashed var(--dash) !important; color: var(--dim) !important; border-radius: 14px !important; }
+  #songItems .item { border-radius: 14px !important; padding: 12px 34px 12px 14px !important; }
+  #songItems .item::after { content: '›'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 22px; color: var(--dim); }
+  .shead, .srow { display: flex; gap: 8px; align-items: center; }
+  .shead { gap: 6px; }
+  .shead button, .srow button { padding: 8px 12px; min-width: 40px; }
+  :is(#songEdit, #player) button.icon { background: none !important; color: var(--dim) !important; min-width: 36px; padding: 6px !important;
+    display: inline-flex; align-items: center; justify-content: center; }
+  #songBack { color: var(--fg) !important; margin-left: -6px; }
+  #songName { flex: 1; min-width: 0; font-weight: 800 !important; font-size: clamp(16px, 3.9vw, 18px) !important; line-height: 1.2; text-align: left; background: none !important;
+    padding-left: 0 !important; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } /* the whole name, two lines */
+  #toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); width: max-content; max-width: calc(100vw - 32px);
+    background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 14px; font-size: 15px; font-weight: 600; text-align: center;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 10; }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
+  /* one height for all the controls: tempo, meter, ∞; play and guitar below, equal */
+  .meta > *, .acts > button { height: 44px; }
+  .stepper { display: inline-flex; align-items: center; background: var(--chip); border-radius: 10px; }
+  .stepper button { background: none !important; min-width: 40px !important; height: 100%; padding: 0 !important; font-size: 20px !important; line-height: 1; }
+  #songBpm { min-width: 44px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #songBpm::after { content: ' ' attr(data-unit); font-weight: 400; font-size: 12px; color: var(--dim); }
+  #songMeter { flex: 0 0 68px; width: 68px; min-width: 68px; height: 44px; margin-left: auto; padding: 0 !important; -webkit-appearance: none; appearance: none;
+    text-align: center; text-align-last: center; font-variant-numeric: tabular-nums; }
+  #songInf { flex: 0 0 44px; width: 44px; height: 44px; font-size: 22px !important; padding: 0 !important; }
+  #songInf.on { background: var(--fg) !important; color: var(--bg) !important; }
+  .acts { gap: 6px; }
+  .acts > button { flex: 1; min-width: 0; padding: 0 2px; font-weight: 600; font-size: 14px !important; white-space: nowrap; }
+  .acts #songPlay { background: var(--tonic) !important; color: #000 !important; }
+  #songs button:disabled { opacity: .35; box-shadow: none; }
+  /* the parts: cards of numbered bars */
+  #songPad { flex: 0 0 24%; min-height: 0; max-height: 24%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #songParts { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 2px 0 4px; }
+  .part { background: var(--bg); border: 1px solid var(--chip); border-radius: 14px; padding: 4px 8px 6px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .part .srow { gap: 4px; }
+  .part .srow > button { background: none !important; color: var(--dim) !important; min-width: 44px; width: 44px; height: 44px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
+  .part .srow > .pname { flex: 1; min-width: 0 !important; text-align: left; font-weight: 800; font-size: 16px !important; color: var(--fg) !important;
+    width: auto; height: 44px; padding-left: 0 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .part .pname::after { content: ' ⌄'; color: var(--dim); font-weight: 400; } /* a tap changes the name */
+  .part .stepper { height: 44px; }
+  .part .stepper button { min-width: 44px !important; width: 44px; height: 44px; padding: 0 !important; font-size: 16px !important; color: var(--fg) !important; }
+  .part .times { font-size: 14px; font-weight: 700; min-width: 22px; text-align: center; }
+  .bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; counter-reset: bar; }
+  .bars button { position: relative; display: flex; align-items: center; justify-content: center; padding: 10px 2px 5px; min-height: 40px; font-weight: 800; font-size: 14px; line-height: 1.1; text-align: center; white-space: normal; overflow-wrap: anywhere;
+    background: var(--bar) !important; border-radius: 10px !important; transition: transform .08s; }
+  .bars button:not(.end)::before { counter-increment: bar; content: counter(bar); position: absolute; top: 3px; left: 6px;
+    font-size: 10px; font-weight: 600; color: var(--dim); }
+  .bars button:active { transform: scale(.95); }
+  .bars button.end { background: none !important; border: 1.5px dashed var(--dash) !important; color: var(--dim); font-weight: 400; }
+  .bars button.cur { outline: 3px solid var(--fg); outline-offset: -3px; }
+  .bars button.lyr::after { content: '♪'; position: absolute; top: 2px; right: 6px; font-size: 11px; color: var(--tonic); } /* a line of words starts here */
+  #songEdit .lyrics button.on { color: var(--fg) !important; font-weight: 700; } /* the line of the framed bar */
+  #padDel { width: 100%; margin-bottom: 6px; padding: 10px; font-size: 15px;
+    position: sticky; top: 0; z-index: 1; box-shadow: 0 6px 0 var(--bg); } /* stays on top while the chords scroll under it */
+  #finPads { text-align: left; }
+  .pad { margin-bottom: 4px; }
+  .padgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin-bottom: 3px; }
+  .padgrid button { height: 40px; min-width: 0; padding: 0 1px; font-weight: 600; font-size: 14px; }
+  .padgrid.minor button { background: none !important; border: 1px solid var(--chip) !important; }
+  .padgrid button.next { background: var(--tonic) !important; color: #000 !important; border-color: var(--tonic) !important; } /* fits next */
+  .padgrid button.fit { background: var(--fit-bg) !important; box-shadow: inset 0 0 0 2px var(--fit-line); } /* in the key too, less common next */
+  .padgrid button.borrow { outline: 2px dashed var(--tonic); outline-offset: -3px; } /* not in the key, but common in songs */
+  #finder { overflow-y: auto; -webkit-overflow-scrolling: touch; -webkit-user-select: text; user-select: text; padding-bottom: 24px; }
+  .back { align-self: flex-start; padding: 7px 12px; }
+  #anTitle { flex: 1; min-width: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #anInput { margin: 2px 0 6px; }
+  .modechords { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin: 8px 0 4px; }
+  .modechords span { text-align: center; border-radius: 8px; padding: 4px 0; background: var(--bg); color: var(--dim); }
+  .modechords b { display: block; font-size: 14px; white-space: nowrap; }
+  .modechords small { display: block; font-size: 10px; }
+  .modechords span.used { background: var(--tonic); color: #000; }
+  #finOut .scale span { color: var(--dim); }
+  #finOut .scale span.used { color: var(--fg); font-weight: 800; border-bottom: 3px solid var(--tonic); }
+  /* player: the current chord big, the next one smaller, the strip of bars moving to the line */
+  #plClick { display: inline-flex; align-items: center; justify-content: center; }
+  #plClick svg { width: 25px; height: 30px; overflow: visible; }
+  #plClick .needle { transform-box: view-box; transform-origin: 12px 24px; transition: transform .12s ease-out; }
+  #plClick[data-swing=left] .needle { transform: rotate(-24deg); }
+  #plClick[data-swing=right] .needle { transform: rotate(24deg); }
+  #plClick[aria-pressed=false] { color: var(--dim); }
+  #plClick[aria-pressed=false] .needle { transform: none; transition: none; }
+  #plChords.on { color: var(--tonic) !important; background: var(--chip) !important; }
+  .phead { flex-wrap: wrap; }
+  .phead #plSpeed { margin-left: auto; }
+  .phead #plWhere { order: 5; flex-basis: 100% !important; text-align: center; font-size: 16px !important; }
+  .phead #plWhere { flex: 1; min-width: 0; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #plSpeed button { padding: 6px 7px; font-size: 13px; background: none; }
+  #plSpeed button.on { background: var(--tonic); color: #000; font-weight: 700; } /* the chosen speed, plainly */
+  @media (max-width: 350px) { .phead { gap: 4px; } #plSpeed button { padding: 4px; } }
+  .pchords { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  #player { touch-action: none; } /* a sideways drag scrubs the song (taps on the buttons still work) */
+  #plCur { flex: 3; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+  #plNext { flex: 2; min-height: 0; display: flex; align-items: center; gap: 8px; border-radius: 14px; padding: 6px 10px;
+    transition: background .15s; opacity: .7; }
+  #player.book #plNext { flex: 1; } /* keep the current fingering readable beside the lyric lines */
+  #plNext .ntext { flex: 1; text-align: center; }
+  #plNext.soon { background: var(--hi); opacity: 1; }
+  #plCurName { font-size: 44px; font-weight: 800; line-height: 1.1; }
+  #plCurName.count { color: var(--tonic); }
+  #plNextName { font-size: 26px; font-weight: 800; }
+  #plLeft { font-size: 13px; color: var(--dim); font-weight: 600; min-height: 1.2em; }
+  #plNext.soon #plLeft { color: var(--fg); }
+  .pchords .diagram { flex: 1; min-height: 0; width: 100%; }
+  #lane { position: relative; height: 52px; overflow: hidden; border-radius: 10px; background: var(--chip); flex: none; }
+  #laneTrack { position: absolute; left: 0; top: 0; bottom: 0; display: flex; will-change: transform; }
+  .lbar { display: flex; border-left: 2px solid var(--dash); position: relative; }
+  .lbar span { display: flex; align-items: center; padding-left: 5px; font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; }
+  .lbar span + span { border-left: 1px dashed var(--dash); }
+  .lbar.first::before { content: attr(data-part); position: absolute; top: 1px; left: 4px; font-size: 12px; font-weight: 700; color: var(--tonic); }
+  #laneHead { position: absolute; top: 0; bottom: 0; left: 25%; width: 3px; margin-left: -1px; background: var(--tonic); }
+  .padgrid button:active, .chips button:active, .prog:active { transform: scale(.95); }
+  #finOut { max-width: 420px; margin: 0 auto; text-align: left; }
+  #finOut .hint, #finOut .warn, #finOut .ok { font-size: 14px; color: var(--dim); text-align: center; }
+  #finOut .warn { color: var(--tonic); text-align: left; }
+  #finOut .card { background: var(--chip); border-radius: 14px; padding: 12px 14px; }
+  #finOut .card h2 { margin: 0; font-size: 22px; }
+  #finOut .card p { margin: 4px 0 0; font-size: 15px; }
+  #finOut .card .sub { color: var(--dim); margin: 0; }
+  #finOut .card .note { font-size: 14px; color: var(--dim); }
+  #finOut .asnotes { margin-top: 8px; width: 100%; background: none; border: 1px solid var(--tonic); color: var(--fg); border-radius: 10px; padding: 8px; font-weight: 600; }
+  #finOut .row { display: flex; gap: 8px; margin-top: 10px; }
+  #finOut .act { flex: 1; background: var(--tonic); color: #000; border: 0; border-radius: 10px; padding: 9px; font-weight: 600; }
+  #finOut h3 { margin: 14px 0 6px; font-size: 13px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { background: none; border: 1px solid var(--dash); border-radius: 18px; padding: 6px 12px; font-size: 15px; }
+  .chips button.on { border-color: var(--tonic); font-weight: 600; }
+  .chips button.chord { background: var(--hi); border-color: transparent; font-weight: 700; }
+  #finOut ol.progs { margin: 0; padding-left: 26px; }
+  #finOut ol.progs li { margin: 0; padding: 2px 0 6px; border-bottom: 1px solid var(--chip); }
+  .prog { width: 100%; text-align: left; background: none; border: 0; padding: 5px 0 2px; font-size: 16px; font-weight: 600; }
+  .prog .have { color: var(--tonic); }
+  .progsongs { font-size: 12px; color: var(--dim); }
+  #finOut ul.songs { margin: 0; padding-left: 18px; font-size: 15px; }
+  #finOut ul.songs li { margin: 4px 0; }
+  #finOut ul.songs .played { font-size: 14px; font-weight: 700; color: var(--tonic); }
+  #finOut .credit { font-size: 11px; color: var(--dim); text-align: center; margin-top: 16px; }
+  .prog small { color: var(--dim); font-weight: 400; font-size: 12px; }
+  #tilesFrom { font-size: 12px; color: var(--tonic); font-weight: 600; margin-top: 8px; }
+  #tilesFrom[hidden] { display: none; }
+  #chords button.sel { outline: 3px solid var(--fg); outline-offset: -3px; }
+  svg text { fill: var(--fg); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+  .maj { font-size: 46px; font-weight: 700; }
+  .min { font-size: 23px; font-weight: 600; }
+  .enh { font-size: 13px; fill: var(--dim) !important; }
+  .center { font-size: 17px; font-weight: 600; }
+  .center.big { font-size: 40px; font-weight: 700; }
+  .deg { font-size: 16px; fill: var(--dim) !important; opacity: .55; }
+  .deg.in { opacity: 1; fill: var(--fg) !important; font-weight: 600; }
+  .deg.home { fill: var(--tonic) !important; font-weight: 800; font-size: 19px; }
+  .center.long { font-size: 14px; }
+  path.sector { fill: var(--ring); stroke: var(--dash); stroke-width: 1.2; stroke-dasharray: 3 3; transition: fill .15s; }
+  path.sector.hi { fill: var(--hi); }
+  path.sector.tonic { fill: var(--tonic); }
+  .rim { fill: none; stroke: var(--line); stroke-width: 3; }
+  .scale { fill: var(--tonic); pointer-events: none; }
+  .mark { fill: none; stroke: var(--fg); stroke-width: 4; stroke-linejoin: round; pointer-events: none; display: none; }
+  .mark.on { display: inline; }
+  .pick { display: none; fill: var(--tonic); fill-opacity: .45; stroke: var(--fg); stroke-width: 4; stroke-linejoin: round; pointer-events: none; }
+  .pick.on { display: inline; }
+  .pick.dashed { fill-opacity: .2; stroke-dasharray: 10 7; } /* dark: must show on white, light-orange and orange sectors alike */
+  #chords button.mine { box-shadow: inset 0 -4px 0 var(--fg); }
+  #neck .dot.mine circle { stroke: var(--fg); stroke-width: 3; }
+
+  #info { grid-area: info; padding: 4px 16px 16px; text-align: center; }
+  #title { font-size: 22px; font-weight: 700; }
+  #chords { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 12px auto 0; max-width: 420px; }
+  #chords button { font: inherit; color: inherit; border: 0; background: var(--chip); border-radius: 10px; padding: 6px 0 4px;
+    cursor: pointer; transition: transform .08s; min-width: 0; }
+  #chords button:active { transform: scale(.92); filter: brightness(.9); }
+  #chords b { display: block; font-size: 16px; white-space: nowrap; }
+  #chords span { display: block; font-size: 11px; color: var(--dim); }
+  #chords button.t { background: var(--tonic); color: #000; }
+  #chords button.t span { color: #000; }
+  /* «Гитара» → «Аккорды»: the chord types, then the 12 chords of the chosen type; no key title there (it means nothing) */
+  #ctypesWrap { display: none; }
+  body[data-view=guitar][data-gmode=chord] #title { display: none; }
+  /* the types: one row that scrolls sideways; the cut-off last chip and the ‹ › arrows say there is more */
+  body[data-view=guitar][data-gmode=chord] #ctypesWrap { display: block; position: relative; max-width: 420px; margin: 0 auto; }
+  #ctypes { display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; padding: 4px 30px; }
+  #ctypes::-webkit-scrollbar { display: none; }
+  #ctypes button { flex: none; scroll-snap-align: center; font: inherit; font-size: 14px; font-weight: 600; color: var(--dim); background: none;
+    border: 1px solid var(--chip); border-radius: 14px; padding: 5px 11px; cursor: pointer; position: relative; }
+  .car { position: absolute; top: 0; bottom: 0; width: 32px; border: 0; padding: 0; font: inherit; font-size: 24px; font-weight: 700;
+    color: var(--fg); cursor: pointer; transition: opacity .2s; }
+  #ctPrev { left: 0; background: linear-gradient(90deg, var(--bg) 55%, transparent); text-align: left; }
+  #ctNext { right: 0; background: linear-gradient(270deg, var(--bg) 55%, transparent); text-align: right; }
+  .car.off { opacity: 0; pointer-events: none; } /* nothing more that way */
+  #ctypes button.on { color: #000; background: var(--tonic); border-color: var(--tonic); }
+  #ctypes button.has::after { content: ''; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 4px; background: var(--fg); } /* the song has chords of this type */
+  body[data-view=guitar][data-gmode=chord] #chords { grid-template-columns: repeat(6, 1fr); margin-top: 8px; }
+  body[data-view=guitar][data-gmode=chord] #chords button { padding: 9px 0; }
+  body[data-view=guitar][data-gmode=chord] #chords span { display: none; }
+  #chords button.long b { font-size: 12px; letter-spacing: -.02em; }
+  body[data-view=guitar][data-gmode=chord] #chords button.mine { background: var(--tonic); color: #000; box-shadow: none; }
+
+  #modes { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 10px auto 0; max-width: 420px; }
+  #modes button { font: inherit; font-size: 13px; color: var(--dim); background: none; border: 1px solid var(--chip);
+    border-radius: 10px; padding: 7px 0; cursor: pointer; }
+  #modes button.on { color: var(--fg); border-color: var(--tonic); font-weight: 600; }
+
+  #aboutBtn { font: inherit; font-size: 14px; color: var(--tonic); background: none; border: 0; padding: 10px 8px 0; cursor: pointer; }
+  dialog { border: 0; border-radius: 16px; background: var(--bg); color: var(--fg); padding: 20px 20px 12px;
+    width: min(440px, calc(100vw - 24px)); max-height: calc(100dvh - 48px); overflow-y: auto; text-align: left;
+    box-shadow: 0 10px 40px rgba(0,0,0,.35); -webkit-user-select: text; user-select: text; }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  dialog h2 { margin: 0 0 6px; font-size: 22px; outline: none; }
+  dialog h3 { margin: 14px 0 4px; font-size: 13px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  dialog p { margin: 0; font-size: 15px; }
+  dialog .mood { font-size: 16px; }
+  dialog .progs li { font-weight: 600; white-space: pre-wrap; }
+  dialog ul { margin: 0; padding-left: 18px; font-size: 15px; }
+  dialog li { margin: 2px 0; }
+  #paste .hint { font-size: 14px; color: var(--dim); margin-bottom: 8px; }
+  :is(#pasteText, #urlValue) { width: 100%; font: 16px/1.35 ui-monospace, Menlo, monospace; color: var(--fg); background: var(--chip); border: 0;
+    border-radius: 10px; padding: 8px; resize: vertical; -webkit-user-select: text; user-select: text; } /* 16px: no zoom on focus */
+  #paste .seg { margin: 8px 0 0; }
+  #paste .seg button.on { background: var(--bg); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  :is(#pasteMsg, #urlMsg) { font-size: 14px; color: var(--tonic); min-height: 1.2em; margin: 6px 0; }
+  :is(#paste, #urlImport) .row { display: flex; gap: 8px; }
+  :is(#paste, #urlImport) .row button { flex: 1; font: inherit; font-weight: 600; padding: 11px; border: 0; border-radius: 12px; color: var(--fg); background: var(--chip); cursor: pointer; }
+  :is(#paste, #urlImport) .row .go { background: var(--tonic); color: #000; }
+  /* the words under a part's bars; «+ слова» — small dashed */
+  #songEdit .addlyr { margin-top: 6px; flex-wrap: wrap; gap: 4px; }
+  #songEdit .addlyr button { background: none !important; border: 1px dashed var(--dash) !important; color: var(--dim) !important;
+    font-size: 13px !important; padding: 4px 10px !important; border-radius: 12px !important; min-width: 0; }
+  .lyrics { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+  #songEdit .lyrics button { background: none !important; text-align: left; font-size: 14px; color: var(--dim) !important; padding: 3px 2px !important;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* the player as a songbook: the chords of a line over its words (plain words: a filling bar confused the user) */
+  #plLines { display: none; }
+  /* the songbook keeps the big fingerings and the strip of bars (with the part names); the words sit between them */
+  #player.book #plLines { display: flex; flex-direction: column; gap: 6px; flex: none; }
+  .line .lchords { display: flex; font-weight: 800; color: var(--tonic); font-size: 15px; }
+  .line .lchords span { flex: 1; min-width: 0; padding: 1px 4px; border-radius: 6px; white-space: nowrap; }
+  .line .lchords span.now { background: var(--tonic); color: #000; }
+  .line .ltext { font-size: 20px; font-weight: 600; line-height: 1.25; }
+  .line.nxt { opacity: .5; }
+  .line.nxt .ltext { font-size: 17px; }
+  dialog .close { display: block; width: 100%; margin-top: 16px; padding: 12px; font: inherit; font-weight: 600;
+    color: var(--fg); background: var(--chip); border: 0; border-radius: 12px; cursor: pointer; }
+
+  #gcDiagram { flex: 1; min-height: 0; width: 100%; touch-action: none; cursor: pointer; margin: 8px 0; }
+  .diagram { aspect-ratio: auto; cursor: default; touch-action: manipulation; }
+  .diagram .str, .diagram .fr { stroke: var(--fg); stroke-width: 2; }
+  .diagram .nut { stroke: var(--fg); stroke-width: 9; }
+  .diagram :is(.cs-dot, .cs-barre) { fill: var(--fg); }
+  .diagram :is(.cs-dot.root, .cs-barre.root) { fill: var(--tonic); }
+  .diagram text { font-size: 22px; font-weight: 700; }
+  .diagram .cs-first { font-size: 20px; fill: var(--dim); }
+  .diagram .cs-name { font-size: 18px; fill: var(--dim); font-weight: 600; }
+  /* «Гитара» in chord mode: the fingering fills the area where the neck is */
+  #gchord { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; }
+  #gchord[hidden] { display: none; }
+  #gcName { font-size: 30px; font-weight: 800; }
+  #gchord .cs-nav { font-size: 17px; gap: 14px; }
+  #gchord .cs-nav button { font-size: 26px; width: 52px; height: 42px; }
+  #neckbar button[hidden] { display: none; }
+  .cs-nav { display: flex; align-items: center; gap: 20px; font-size: 20px; font-weight: 600; }
+  .cs-nav button { font: inherit; font-size: 34px; width: 64px; height: 56px; border: 0; border-radius: 14px; background: var(--chip); color: var(--fg); cursor: pointer; }
+  .cs-nav button:disabled { opacity: .3; }
+
+  @media (orientation: landscape) and (max-height: 600px) {
+    body { grid-template-columns: minmax(0, 54fr) minmax(0, 46fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "box views" "box info"; }
+    #info { align-self: center; }
+    #box { padding: 8px; }
+    /* metronome side by side: tempo and slider left, the rest right */
+    #metro { display: grid; grid-template-columns: 1fr 1fr; grid-template-areas: "bpm meters" "bpm beats" "slider tap" "slider go";
+      align-items: center; justify-items: center; column-gap: 24px; row-gap: 10px; }
+    #metro[hidden] { display: none; }
+    .bpmrow { grid-area: bpm; } .slrow { grid-area: slider; } #tap { grid-area: tap; } #meters { grid-area: meters; }
+    #beats { grid-area: beats; } #metroGo { grid-area: go; padding: 12px; }
+    #bpm { font-size: 64px; }
+    /* tuner side by side: the note and the meter left, the controls right */
+    #tuner { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; row-gap: 8px; align-items: center; justify-items: center;
+      grid-template-areas: "note inst" "note tuning" "meter strings" "status buttons" "heard msg"; }
+    #tuner[hidden] { display: none; }
+    #tunerNote { grid-area: note; font-size: 80px; } #tunerMeter { grid-area: meter; } #tunerStatus { grid-area: status; }
+    #tunerHeard { grid-area: heard; } #tunerInst { grid-area: inst; } #tunerTuning { grid-area: tuning; }
+    #tunerStrings { grid-area: strings; } #tuner .trow { grid-area: buttons; } #tunerMsg { grid-area: msg; }
+    /* player: the two chords side by side */
+    .pchords { flex-direction: row; } #plCur, #plNext { flex: 1; min-width: 0; } #plNext { flex-direction: column; }
+    #plNext .ntext { flex: none; } #plCurName { font-size: 34px; }
+    #player.book #plCurName { font-size: 26px; } /* landscape songbook: room for the words */
+    #player.book .line .ltext { font-size: 17px; } #player.book .line.nxt { display: none; } #player.book #lane { height: 40px; }
+    #songs { max-width: none; }
+    /* song editor side by side: the parts left, the chord pad right */
+    #songEdit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); column-gap: 12px;
+      grid-template-areas: "head pad" "meta pad" "acts pad" "parts pad"; }
+    #songEdit .shead { grid-area: head; } #songEdit .meta { grid-area: meta; }
+    #songEdit .acts { grid-area: acts; }
+    #songParts { grid-area: parts; min-height: 0; } #songPad { grid-area: pad; max-height: none; }
+    #songEdit #songPad .srow { grid-area: auto; }
+    body:is([data-view=songs], [data-view=records], [data-view=metro], [data-view=tuner]) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "views" "box"; }
+  }
+</style>
+</head>
+<body>
+<div id="views">
+  <div class="seg" role="tablist">
+    <button data-v="circle" data-testid="view-circle" hidden data-t="vCircle">Круг</button><!-- hidden for now (user's wish), kept and tested -->
+    <button data-v="guitar" data-testid="view-guitar" data-t="vChords">Аккорды</button>
+    <button data-v="songs" data-testid="view-songs" data-t="vSongs">Песни</button>
+    <button data-v="records" data-testid="view-records" data-t="vRecords">Записи</button>
+    <button data-v="metro" data-testid="view-metro" data-t="vClick">Клик</button>
+    <button data-v="tuner" data-testid="view-tuner" data-t="vTuner">Тюнер</button>
+  </div>
+  <div id="neckbar" hidden>
+    <button id="keyDown" data-ta="down" aria-label="На полтона ниже">◀</button>
+    <select id="tuning" data-ta="tuning" aria-label="Строй"></select>
+    <button id="keyUp" data-ta="up" aria-label="На полтона выше">▶</button>
+    <button id="gmode" data-testid="gmode" data-ta="gmode" aria-label="Аккорды или лады"></button>
+  </div>
+</div>
+<div id="box">
+  <svg id="circle" viewBox="-262 -262 524 524" role="img" data-ta="circle" aria-label="Квинтовый круг">
+    <g id="wheel"></g>
+    <circle class="rim" r="245"></circle>
+    <circle class="rim" r="165"></circle>
+    <circle r="95" style="fill: var(--bg)" class="rim"></circle>
+    <g id="degrees"></g>
+    <text class="center big" id="cMaj" y="-14">C</text>
+    <text class="center" id="cMin" y="28">Am</text>
+  </svg>
+  <svg id="neck" hidden role="img" data-ta="neck" aria-label="Гриф"></svg>
+  <div id="gchord" hidden>
+    <div id="gcName" data-testid="gcName"></div>
+    <svg id="gcDiagram" class="diagram" data-testid="gcDiagram" viewBox="0 0 316 330" role="img" data-ta="diagram" aria-label="Схема аккорда"></svg>
+    <div class="cs-nav"><button id="gcPrev" data-testid="gcPrev" data-ta="prev" aria-label="Предыдущий вариант">‹</button><span id="gcCount" data-testid="gcCount"></span><button id="gcNext" data-testid="gcNext" data-ta="next" aria-label="Следующий вариант">›</button></div>
+  </div>
+  <div id="metro" hidden data-testid="metro">
+    <div class="bpmrow"><span id="bpm" data-testid="bpm"></span><small data-t="bpm">уд/мин</small></div>
+    <div class="slrow"><button id="bpmDown" data-testid="bpmDown" data-ta="slower" aria-label="Медленнее">−</button>
+      <input id="bpmSlider" data-testid="bpmSlider" type="range" step="1" data-ta="tempo" aria-label="Темп">
+      <button id="bpmUp" data-testid="bpmUp" data-ta="faster" aria-label="Быстрее">+</button></div>
+    <button id="tap" data-testid="tap" data-t="tap">Тап</button>
+    <div class="seg" id="meters" data-testid="meters"></div>
+    <div id="beats" data-testid="beats"></div>
+    <button id="metroGo" data-testid="metroGo"></button>
+  </div>
+  <div id="tuner" hidden data-testid="tuner">
+    <div class="seg" id="tunerInst"><button data-inst="guitar" data-testid="tinst-guitar" data-t="guitar">Гитара</button><button data-inst="bass" data-testid="tinst-bass" data-t="bass">Бас</button></div>
+    <select id="tunerTuning" data-testid="tunerTuning" data-ta="tuning" aria-label="Строй"></select>
+    <div id="tunerStrings" data-testid="tunerStrings"></div>
+    <div id="tunerNote" data-testid="tunerNote">—</div>
+    <div id="tunerMeter"><div class="tick"></div><div id="tunerNeedle"></div></div>
+    <div id="tunerStatus" data-testid="tunerStatus"></div>
+    <div id="tunerHeard" data-testid="tunerHeard"></div>
+    <div class="trow"><button id="tunerGo" data-testid="tunerGo"></button><button id="tunerRef" data-testid="tunerRef" data-t="ref">▶ Эталон</button></div>
+    <div id="tunerMsg" data-testid="tunerMsg"></div>
+  </div>
+  <div id="songs" hidden data-testid="songs">
+    <div id="songList" class="sub">
+      <ul id="songItems" data-testid="songItems"></ul>
+      <div id="songFolderBar"><button id="songFolderBack" class="icon" data-testid="songFolderBack" aria-label="Назад" hidden>‹</button><span id="songFolderTitle" data-testid="songFolderTitle">Песни</span><button id="songFolderCreate" data-testid="songFolderCreate">+ Папка</button></div>
+      <div class="srow newrow"><button id="songAdd" data-testid="songAdd" class="wide" data-t="newSong">+ Новая песня</button><button id="songImport" data-testid="songImport" class="wide" data-t="importJson">Импорт JSON</button><button id="songURL" data-testid="songURL" class="wide" hidden data-t="importURL">По ссылке</button><button id="songPaste" data-testid="songPaste" hidden data-t="paste">Вставить текст</button><input id="songFile" data-testid="songFile" type="file" accept=".json,application/json" hidden></div>
+    </div>
+    <div id="songEdit" class="sub" hidden data-testid="songEdit">
+      <div class="shead">
+        <button id="songBack" class="icon" data-testid="songBack" data-ta="back" aria-label="К списку песен"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="songName" data-testid="songName" data-ta="rename" aria-label="Переименовать"></button>
+        <span id="songReadonly" data-testid="songReadonly">Оригинал</span>
+        <button id="songMove" class="icon" data-testid="songMove" aria-label="Переместить"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM3 10h18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 14h8m-3-3 3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="songCopy" class="icon" data-testid="songCopy" data-ta="copy" aria-label="Копия песни"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        <button id="songShare" class="icon" data-testid="songShare" data-ta="exportJson" aria-label="Экспорт JSON"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v6h14v-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button id="songDel" class="icon" data-testid="songDel" data-ta="delSong" aria-label="Удалить песню"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+      <div class="srow meta">
+        <div class="stepper"><button id="songSlower" data-testid="songSlower" data-ta="slower" aria-label="Медленнее">−</button><span id="songBpm" data-testid="songBpm" data-unit="уд/мин"></span><button id="songFaster" data-testid="songFaster" data-ta="faster" aria-label="Быстрее">+</button></div>
+        <select id="songMeter" data-testid="songMeter" data-ta="meter" aria-label="Размер"></select>
+        <button id="songInf" data-testid="songInf" data-ta="loop" aria-label="Играть по кругу">∞</button>
+      </div>
+      <div class="srow acts">
+        <button id="songPlay" data-testid="songPlay" class="go" data-t="play">▶ Играть</button>
+        <div id="songTranspose" data-testid="songTranspose" role="group" aria-label="Тональность: —"><button id="songTransposeDown" data-testid="songTransposeDown" aria-label="На полутон ниже">−½</button><span id="songTransposeKey" data-testid="songTransposeKey" aria-hidden="true">—</span><button id="songTransposeUp" data-testid="songTransposeUp" aria-label="На полутон выше">+½</button></div>
+        <button id="songAnalyze" data-testid="songAnalyze" hidden data-t="analyze">Разбор</button><!-- hidden for now (user's wish), kept and tested -->
+        <button id="songGuitar" data-testid="songGuitar" data-t="onGuitar">На гитаре</button>
+      </div>
+      <div id="songParts" data-testid="songParts"></div>
+      <div id="songPad">
+        <button id="padDel" data-testid="padDel" class="wide" data-t="delBar">⌫ Удалить такт</button>
+        <div id="finPads"></div>
+      </div>
+    </div>
+    <div id="finder" class="sub" hidden>
+      <div class="srow"><button id="anBack" data-testid="anBack" class="back" data-t="toSong">‹ К песне</button><b id="anTitle" data-testid="anTitle"></b></div>
+      <div id="anInput" class="chips" data-testid="anInput"></div>
+      <div id="finOut"></div>
+    </div>
+    <div id="player" class="sub" hidden data-testid="player">
+      <div class="srow phead">
+        <button id="plStop" data-testid="plStop" data-ta="stop" aria-label="Стоп">■</button>
+        <button id="plRecord" data-testid="plRecord" data-ta="recordAria" aria-label="Записать">●</button>
+        <span id="playerRecordingIndicator" class="recording-indicator" data-testid="playerRecordingIndicator" role="status" hidden></span>
+        <span id="playerRecordStatus" data-testid="playerRecordStatus" role="status"></span>
+        <button id="plClick" data-testid="plClick" data-ta="clicks" aria-label="Метроном" aria-pressed="true"><svg viewBox="0 0 24 30" aria-hidden="true"><path d="M7 27 9 4h6l2 23z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path class="needle" d="M12 24 12 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="5" r="2" fill="currentColor"/></svg></button>
+        <button id="plChords" data-testid="plChords" class="icon" data-ta="chordSound" aria-label="Звучание аккордов" aria-pressed="false">♫</button>
+        <div id="plWhere" data-testid="plWhere"></div>
+        <div class="seg" id="plSpeed" data-testid="plSpeed"></div>
+      </div>
+      <div class="pchords">
+        <div id="plCur"><div id="plCurName" data-testid="plCur"></div><svg id="plCurDiagram" class="diagram" viewBox="0 0 316 330"></svg></div>
+        <div id="plNext"><div class="ntext"><div id="plLeft" data-testid="plLeft"></div><div id="plNextName" data-testid="plNext"></div></div><svg id="plNextDiagram" class="diagram" viewBox="0 0 316 330"></svg></div>
+      </div>
+      <div id="plLines" data-testid="plLines"></div>
+      <div id="lane" data-testid="lane"><div id="laneTrack" data-testid="laneTrack"></div><div id="laneHead"></div></div>
+    </div>
+  </div>
+  <section id="records" hidden data-testid="records">
+    <div class="srow"><button id="recordStart" data-testid="recordStart" class="go" data-t="record">● Записать</button><span id="recordingIndicator" class="recording-indicator" data-testid="recordingIndicator" role="status" hidden></span><span id="recordStatus" data-testid="recordStatus" role="status"></span></div>
+    <p id="recordsEmpty" data-testid="recordsEmpty" data-t="recordsEmpty">Записей пока нет</p>
+    <ul id="recordItems" data-testid="recordItems"></ul>
+  </section>
+</div>
+<div id="info">
+  <div id="title" data-testid="title"></div>
+  <div id="tilesFrom" data-testid="tilesFrom" hidden></div>
+  <div id="ctypesWrap"><div id="ctypes" data-testid="ctypes" data-ta="ctype" aria-label="Тип аккорда"></div>
+    <button id="ctPrev" class="car" data-testid="ctPrev" data-ta="ctPrev" aria-label="Другие типы аккордов">‹</button><button id="ctNext" class="car" data-testid="ctNext" data-ta="ctNext" aria-label="Ещё типы аккордов">›</button></div>
+  <div id="chords" data-testid="chords"></div>
+  <div id="modes" data-ta="mode" aria-label="Лад"></div>
+  <button id="aboutBtn" data-testid="about"></button>
+</div>
+<dialog id="about"></dialog>
+<div id="toast" data-testid="toast" role="status"></div>
+<dialog id="urlImport" aria-labelledby="urlTitle">
+  <form id="urlForm">
+    <h2 id="urlTitle" data-t="urlTitle">Ссылка Ultimate Guitar</h2>
+    <input id="urlValue" data-testid="urlValue" type="url" required autocomplete="off" spellcheck="false" data-ta="urlTitle">
+    <p id="urlMsg" data-testid="urlMsg" role="status"></p>
+    <div class="row"><button id="urlCancel" type="button" data-t="cancel">Отмена</button><button id="urlGo" data-testid="urlGo" class="go" data-t="urlGo">Добавить</button></div>
+  </form>
+</dialog>
+
+<dialog id="paste" data-testid="paste">
+  <h2 data-t="pasteTitle">Вставить песню</h2>
+  <p class="hint" data-t="pasteHint">Аккорды над словами — как на сайтах аккордов, или файл песни.</p>
+  <textarea id="pasteText" data-testid="pasteText" rows="8" spellcheck="false"></textarea>
+  <div class="seg" id="pastePer"><button data-per="1" data-testid="per-1" data-t="per1">Аккорд — 1 такт</button><button data-per="2" data-testid="per-2" data-t="per2">2 такта</button></div>
+  <p id="pasteMsg" data-testid="pasteMsg"></p>
+  <div class="row"><button id="pasteCancel" data-testid="pasteCancel" data-t="cancel">Отмена</button><button id="pasteGo" data-testid="pasteGo" class="go" data-t="layOut">Разложить</button></div>
+</dialog>
+<dialog id="songMoveDialog" data-testid="songMoveDialog" aria-labelledby="songMoveTitle">
+  <h2 id="songMoveTitle" data-testid="songMoveTitle">Переместить</h2>
+  <div id="songMoveTargets" data-testid="songMoveTargets"></div>
+  <button id="songMoveCancel" class="close" data-testid="songMoveCancel" data-t="cancel">Отмена</button>
+</dialog>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
